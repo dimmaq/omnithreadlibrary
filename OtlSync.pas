@@ -244,9 +244,18 @@ type
     FOwnsObject : boolean;
     procedure Clear; inline;
     function  GetValue: T; inline;
+    procedure SetValue(const AValue: T); inline;
+    {$IFDEF LOCKED_EXT}
+    function  GetLockedValue: T; inline;
+    procedure SetLockedValue(const AValue: T); inline;
+    {$ENDIF}
   public
     type TFactory = reference to function: T;
     type TProcT = reference to procedure(const value: T);
+    {$IFDEF LOCKED_EXT}
+    type TProcVarT = reference to procedure(var value: T);
+    type TFuncT = reference to function(const value: T): T;
+    {$ENDIF}
     constructor Create(const value: T; ownsObject: boolean = true);
     class operator Implicit(const value: Locked<T>): T; inline;
     class operator Implicit(const value: T): Locked<T>; inline;
@@ -257,9 +266,16 @@ type
     procedure Acquire; inline;
     procedure Locked(proc: TProc); overload; inline;
     procedure Locked(proc: TProcT); overload; inline;
+    {$IFDEF LOCKED_EXT}
+    procedure Locked(proc: TProcVarT); overload; inline;
+    procedure Locked(func: TFuncT); overload; inline;
+    {$ENDIF}
     procedure Release; inline;
     procedure Free; inline;
-    property Value: T read GetValue;
+    property Value: T read GetValue write SetValue;
+    {$IFDEF LOCKED_EXT}
+    property LockedValue: T read GetLockedValue write SetLockedValue;
+    {$ENDIF}
   end; { Locked<T> }
 
   IOmniLockManagerAutoUnlock = interface
@@ -1085,6 +1101,31 @@ begin
   Result := FValue;
 end; { Locked<T>.GetValue }
 
+procedure Locked<T>.SetValue(const AValue: T);
+begin
+  Assert(FLock.LockCount > 0, 'Locked<T>.SetValue: Not locked');
+  FValue := AValue
+end; { Locked<T>.SetValue }
+
+
+{$IFDEF LOCKED_EXT}
+procedure Locked<T>.SetLockedValue(const AValue: T);
+begin
+  Acquire;
+  try
+    FValue := AValue;
+  finally Release; end;
+end;
+
+function Locked<T>.GetLockedValue: T;
+begin
+  Acquire;
+  try
+    Result := FValue
+  finally Release; end;
+end;
+{$ENDIF}
+
 function Locked<T>.Initialize(factory: TFactory): T;
 begin
   if not FInitialized then begin
@@ -1150,6 +1191,24 @@ begin
     proc(Value);
   finally Release; end;
 end; { Locked<T>.Locked }
+
+{$IFDEF LOCKED_EXT}
+procedure Locked<T>.Locked(proc: TProcVarT);
+begin
+  Acquire;
+  try
+    proc(Self.FValue);
+  finally Release; end;
+end; { Locked<T>.Locked }
+
+procedure Locked<T>.Locked(func: TFuncT);
+begin
+  Acquire;
+  try
+    FValue := func(Self.FValue);
+  finally Release; end;
+end; { Locked<T>.Locked }
+{$ENDIF}
 
 procedure Locked<T>.Release;
 begin
